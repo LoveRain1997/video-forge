@@ -1,0 +1,7 @@
+*.pyc
+__pycache__/
+audio/*.wav
+audio/*.mp3
+out/*.mp4
+qa/
+.DS_Store
