@@ -1,0 +1,115 @@
+<!doctype html>
+<!-- ============================================================
+  hello-vf — a 5s demo of the vf.js v2 kernel (1280x720, no assets).
+  Render it:
+    python scripts/render.py examples/hello-vf/index.html out/demo.mp4 \
+           --size 1280x720 --fps 30 --duration 5
+  Determinism check + golden frames:
+    python scripts/lint_page.py examples/hello-vf
+    python scripts/regression.py examples/hello-vf/index.html \
+           --out examples/hello-vf/qa/golden --size 1280x720 \
+           --at 0,1.2,2.4,3.4,4.9 init     (then: drop "init" to check)
+
+  What it exercises: theme · events/at anchors · scene+layer+after ·
+  animate (spring presets) · typewriter · interp (multi-keyframe + step) ·
+  camera punch · comets / ring / glitch / burst · captions.
+============================================================ -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>hello-vf</title>
+<style>
+  html, body { margin: 0; width: 100%; height: 100%; background: #07090F; overflow: hidden; }
+  #stage { position: absolute; inset: 0; transform-origin: 50% 50%; font-family: 'Inter', 'Microsoft YaHei', sans-serif; }
+  .scene { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; visibility: hidden; }
+  canvas { position: absolute; inset: 0; pointer-events: none; }
+  h1 { margin: 0; font-size: 76px; color: #E8EDF8; letter-spacing: -0.02em; }
+  h1 em { font-style: normal; color: #38E1C8; }
+  .mono { font-family: ui-monospace, Consolas, monospace; color: #6CB2FF; font-size: 24px; margin-top: 18px; }
+  .card { padding: 34px 48px; border: 1px solid rgba(108,178,255,.35); border-radius: 18px;
+          background: rgba(56,225,200,.06); color: #E8EDF8; font-size: 40px; }
+  .card small { display: block; margin-top: 12px; font-size: 20px; color: #4A5878;
+                font-family: ui-monospace, Consolas, monospace; }
+  .bar { position: absolute; left: 12%; right: 12%; bottom: 24%; height: 6px; border-radius: 3px;
+         background: rgba(232,237,248,.12); overflow: hidden; }
+  .bar > i { display: block; height: 100%; width: 100%; background: #F4C64A; transform: scaleX(0); transform-origin: left; }
+  .tag { position: absolute; right: 12%; bottom: calc(24% + 16px); font-size: 16px; color: #4A5878;
+         font-family: ui-monospace, Consolas, monospace; }
+</style>
+</head>
+<body>
+<div id="stage">
+  <section id="s1" class="scene">
+    <h1 id="title">video-forge <em>v2</em></h1>
+    <pre id="code" class="mono"></pre>
+  </section>
+  <section id="s2" class="scene">
+    <div id="card" class="card">deterministic by construction
+      <small>frame 137 &nbsp;=&nbsp; f(137 / 30) &nbsp;— re-render any frame, any time</small>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <span id="tag" class="tag"></span>
+  </section>
+  <canvas id="fx" width="1280" height="720"></canvas>
+</div>
+
+<script src="vf.js"></script>
+<script src="fx-lib.js"></script>
+<script>
+const { $ } = VF;
+VF.theme();                                     // IDE-dark palette (default)
+
+/* Anchors: the numbers live here, code expresses dependency on them. */
+VF.events({ beat: 1.0, reveal: 2.4, end: 5.0 });
+
+/* Scene: two layers; s2 starts exactly when s1 ends (VF.after). */
+const film = VF.scene({
+  dur: VF.at('end'),
+  layers: [
+    VF.layer({ id: 's1', el: $('s1'), at: 0, dur: VF.at('reveal'), fn: (t) => {
+      VF.animate($('title'), t, [
+        { at: 0.15, spring: 'hero', from: { opacity: 0, y: 70, scale: 0.94 } },
+        { at: VF.at('reveal') - 0.35, dur: 0.35, ease: 'inCubic',
+          from: { opacity: 1, y: 0 }, to: { opacity: 0, y: -40 } },
+      ]);
+      VF.animate($('code') , t, [{ at: 0.5, dur: 0.5, ease: 'outCubic', from: { opacity: 0, y: 24 } }]);
+      VF.typewriter($('code'), 'const film = VF.scene({ layers })', t, VF.at('beat'), 1.0);
+    }}),
+    VF.layer({ id: 's2', el: $('s2'), at: VF.after('s1'), dur: 2.6, fn: (t) => {
+      VF.animate($('card'), t, [{ at: 0, spring: 'container', from: { opacity: 0, y: 60 } }]);
+      /* multi-keyframe interp with per-segment easing (bar fills in bursts) */
+      $('bar').style.transform = `scaleX(${VF.interp(t, [0.1, 0.5, 1.6, 2.3], [0.06, 0.45, 0.8, 1],
+                                    { ease: ['outBack', 'inOutSin', 'outCubic'] })})`;
+      /* discrete step ease: a percentage that ticks instead of sliding */
+      $('tag').textContent = Math.round(VF.interp(t, [0.1, 2.3], [0, 100], { ease: VF.Ease.step(10) })) + '%';
+    }}),
+  ],
+});
+
+/* Canvas FX layer (always mounted; each FX gates itself on its window). */
+const fx = (t) => {
+  const cx = $('fx').getContext('2d');
+  cx.clearRect(0, 0, 1280, 720);
+  const T = VF.theme();
+  VF.comets(cx, t, { W: 1280, H: 720, n: 7 });
+  VF.ring(cx, t, VF.at('reveal'), 640, 330, { color: T.fn, maxr: 500 });
+  VF.glitch(cx, t, VF.at('reveal'), { W: 1280, H: 720, strength: 0.8 });
+  VF.burst(cx, t, VF.at('reveal'), 640, 330, { seed: 3, n: 14 });
+};
+
+/* Captions: same {start,end,text} shape as vo_timeline.json lines. */
+const caps = VF.captions([
+  { start: 0.25, end: 2.30, text: 'every frame is a pure function of time' },
+  { start: 2.55, end: 4.90, text: 'absorb the patterns, keep the determinism' },
+]);
+
+window.render = (t) => {
+  $('stage').style.transform = VF.camera(t, [VF.at('reveal')], { seed: 2, shake: 4 });
+  film.render(t);
+  fx(t);
+  caps(t);
+};
+window.ready = true;
+</script>
+</body>
+</html>
